@@ -8,6 +8,7 @@
 #include <Utf8.h>
 #include <Xtc.h>
 
+#include <cstdio>
 #include <cstring>
 #include <vector>
 
@@ -117,8 +118,8 @@ void HomeActivity::onEnter() {
 
   selectorIndex = 0;
 
-  auto metrics = UITheme::getInstance().getMetrics();
-  loadRecentBooks(metrics.homeRecentBooksCount);
+  // Load most recent book for "Currently Reading" icon
+  loadRecentBooks(1);
 
   // Trigger first update
   requestUpdate();
@@ -212,50 +213,227 @@ void HomeActivity::loop() {
   }
 }
 
+void HomeActivity::drawMacFolderIcon(int cx, int cy, bool selected) const {
+  // Classic Mac OS folder: tab on top-left, rectangular body
+  // 48x36 pixels, centered at (cx, cy)
+  const int x = cx - 24;
+  const int y = cy - 18;
+  const bool inv = selected;
+
+  // Folder tab (top-left, extends above body)
+  renderer.fillRect(x, y, 20, 10, !inv);
+  renderer.fillRect(x + 1, y + 1, 18, 8, inv);
+
+  // Folder body
+  renderer.fillRect(x, y + 9, 48, 27, !inv);
+  renderer.fillRect(x + 1, y + 10, 46, 25, inv);
+}
+
+void HomeActivity::drawMacDocumentIcon(int cx, int cy, bool selected) const {
+  const int x = cx - 14;
+  const int y = cy - 18;
+  const bool inv = selected;
+
+  // Document body
+  renderer.fillRect(x, y, 28, 36, !inv);
+  renderer.fillRect(x + 1, y + 1, 26, 34, inv);
+
+  // Dog-ear fold (top-right corner)
+  renderer.fillRect(x + 21, y + 1, 6, 7, inv);
+  renderer.fillRect(x + 20, y + 1, 1, 7, !inv);
+  renderer.fillRect(x + 20, y + 7, 7, 1, !inv);
+
+  // Text lines inside document
+  renderer.fillRect(x + 4, y + 12, 16, 1, !inv);
+  renderer.fillRect(x + 4, y + 17, 16, 1, !inv);
+  renderer.fillRect(x + 4, y + 22, 12, 1, !inv);
+}
+
+void HomeActivity::drawMacSettingsIcon(int cx, int cy, bool selected) const {
+  const bool inv = selected;
+
+  // Gear: central body + 4 teeth at cardinal directions
+  renderer.fillRect(cx - 10, cy - 10, 20, 20, !inv);
+  renderer.fillRect(cx - 4, cy - 16, 8, 7, !inv);
+  renderer.fillRect(cx - 4, cy + 9, 8, 7, !inv);
+  renderer.fillRect(cx - 16, cy - 4, 7, 8, !inv);
+  renderer.fillRect(cx + 9, cy - 4, 7, 8, !inv);
+
+  // Connected interiors
+  renderer.fillRect(cx - 9, cy - 9, 18, 18, inv);
+  renderer.fillRect(cx - 3, cy - 15, 6, 7, inv);
+  renderer.fillRect(cx - 3, cy + 8, 6, 7, inv);
+  renderer.fillRect(cx - 15, cy - 3, 7, 6, inv);
+  renderer.fillRect(cx + 8, cy - 3, 7, 6, inv);
+
+  // Center hole
+  renderer.fillRect(cx - 3, cy - 3, 6, 6, !inv);
+  renderer.fillRect(cx - 2, cy - 2, 4, 4, inv);
+}
+
 void HomeActivity::render(Activity::RenderLock&&) {
-  auto metrics = UITheme::getInstance().getMetrics();
-  const auto pageWidth = renderer.getScreenWidth();
-  const auto pageHeight = renderer.getScreenHeight();
+  const int W = renderer.getScreenWidth();
+  const int H = renderer.getScreenHeight();
 
   renderer.clearScreen();
-  bool bufferRestored = coverBufferStored && restoreCoverBuffer();
 
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.homeTopPadding}, nullptr);
+  // ==================== MENU BAR ====================
+  constexpr int menuBarH = 26;
+  renderer.drawLine(0, menuBarH - 1, W - 1, menuBarH - 1);
+  renderer.drawText(UI_10_FONT_ID, 12, 6, "File", true);
+  renderer.drawText(UI_10_FONT_ID, 58, 6, "Edit", true);
+  renderer.drawText(UI_10_FONT_ID, 104, 6, "View", true);
+  renderer.drawText(UI_10_FONT_ID, 156, 6, "Special", true);
 
-  GUI.drawRecentBookCover(renderer, Rect{0, metrics.homeTopPadding, pageWidth, metrics.homeCoverTileHeight},
-                          recentBooks, selectorIndex, coverRendered, coverBufferStored, bufferRestored,
-                          std::bind(&HomeActivity::storeCoverBuffer, this));
+  // Battery in menu bar (right side)
+  const uint16_t battPct = battery.readPercentage();
+  char battText[8];
+  snprintf(battText, sizeof(battText), "%d%%", battPct);
+  int battTextW = renderer.getTextWidth(SMALL_FONT_ID, battText);
+  const int biX = W - battTextW - 34;
+  const int biY = 8;
+  renderer.drawRect(biX, biY, 18, 10);
+  renderer.fillRect(biX + 18, biY + 3, 2, 4);
+  int fillW = (14 * static_cast<int>(battPct)) / 100;
+  if (fillW > 0) {
+    renderer.fillRect(biX + 2, biY + 2, fillW, 6);
+  }
+  renderer.drawText(SMALL_FONT_ID, W - battTextW - 10, 9, battText, true);
 
-  // Build menu items dynamically
-  std::vector<const char*> menuItems = {tr(STR_BROWSE_FILES), tr(STR_MENU_RECENT_BOOKS), tr(STR_FILE_TRANSFER),
-                                        tr(STR_SETTINGS_TITLE)};
-  std::vector<UIIcon> menuIcons = {Folder, Recent, Transfer, Settings};
+  // ==================== FINDER WINDOW ====================
+  constexpr int winX = 14, winY = 38;
+  const int winW = W - 28;
+  const int winH = H - 98;
 
-  if (hasOpdsUrl) {
-    // Insert OPDS Browser after My Library
-    menuItems.insert(menuItems.begin() + 2, tr(STR_OPDS_BROWSER));
-    menuIcons.insert(menuIcons.begin() + 2, Library);
+  // Window double border
+  renderer.drawRect(winX, winY, winW, winH);
+  renderer.drawRect(winX + 1, winY + 1, winW - 2, winH - 2);
+
+  // Drop shadow
+  renderer.fillRect(winX + 3, winY + winH, winW - 1, 2);
+  renderer.fillRect(winX + winW, winY + 3, 2, winH - 1);
+
+  // ---- Title bar ----
+  constexpr int tbH = 22;
+  const int tbY = winY + 2;
+  const int tbInnerX1 = winX + 2;
+  const int tbInnerX2 = winX + winW - 3;
+
+  // Title bar horizontal stripes
+  for (int y = tbY + 2; y < tbY + tbH - 1; y += 2) {
+    renderer.drawLine(tbInnerX1 + 18, y, tbInnerX2 - 18, y);
   }
 
-  GUI.drawButtonMenu(
-      renderer,
-      Rect{0, metrics.homeTopPadding + metrics.homeCoverTileHeight + metrics.verticalSpacing, pageWidth,
-           pageHeight - (metrics.headerHeight + metrics.homeTopPadding + metrics.verticalSpacing * 2 +
-                         metrics.buttonHintsHeight)},
-      static_cast<int>(menuItems.size()), selectorIndex - recentBooks.size(),
-      [&menuItems](int index) { return std::string(menuItems[index]); },
-      [&menuIcons](int index) { return menuIcons[index]; });
+  // Close box
+  renderer.fillRect(tbInnerX1 + 4, tbY + 4, 14, 14, false);
+  renderer.drawRect(tbInnerX1 + 4, tbY + 4, 14, 14);
 
-  const auto labels = mappedInput.mapLabels("", tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
-  GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+  // Title text
+  const char* winTitle = "Xteink HD";
+  const int titleW = renderer.getTextWidth(UI_10_FONT_ID, winTitle, EpdFontFamily::BOLD);
+  const int titleX = winX + (winW - titleW) / 2;
+  renderer.fillRect(titleX - 8, tbY + 1, titleW + 16, tbH - 2, false);
+  renderer.drawText(UI_10_FONT_ID, titleX, tbY + 4, winTitle, true, EpdFontFamily::BOLD);
+
+  // ---- Info bar ----
+  const int infoY = tbY + tbH;
+  constexpr int infoH = 22;
+  renderer.drawLine(winX + 2, infoY, tbInnerX2, infoY);
+
+  const int itemCount = getMenuItemCount();
+  char infoText[64];
+  snprintf(infoText, sizeof(infoText), "%d items", itemCount);
+  renderer.drawText(SMALL_FONT_ID, winX + 12, infoY + 5, infoText);
+
+  renderer.drawLine(winX + 2, infoY + infoH, tbInnerX2, infoY + infoH);
+
+  // ==================== ICON GRID ====================
+  const int contentY = infoY + infoH + 1;
+  const int contentW = winW - 4;
+  const int contentX = winX + 2;
+
+  // Build items list matching loop() order: recent books first, then menu items
+  constexpr int ICON_FOLDER = 0;
+  constexpr int ICON_DOCUMENT = 1;
+  constexpr int ICON_SETTINGS = 2;
+
+  std::vector<std::string> gridLabels;
+  std::vector<int> gridIcons;
+
+  // Recent books (document icons)
+  for (const auto& book : recentBooks) {
+    gridLabels.push_back(book.title.empty() ? "Currently Reading" : book.title);
+    gridIcons.push_back(ICON_DOCUMENT);
+  }
+
+  // Static menu items
+  gridLabels.push_back(tr(STR_BROWSE_FILES));
+  gridIcons.push_back(ICON_FOLDER);
+  gridLabels.push_back(tr(STR_MENU_RECENT_BOOKS));
+  gridIcons.push_back(ICON_FOLDER);
+  if (hasOpdsUrl) {
+    gridLabels.push_back(tr(STR_OPDS_BROWSER));
+    gridIcons.push_back(ICON_FOLDER);
+  }
+  gridLabels.push_back(tr(STR_FILE_TRANSFER));
+  gridIcons.push_back(ICON_FOLDER);
+  gridLabels.push_back(tr(STR_SETTINGS_TITLE));
+  gridIcons.push_back(ICON_SETTINGS);
+
+  constexpr int cols = 3;
+  const int cellW = contentW / cols;
+  constexpr int cellH = 120;
+  const int numItems = static_cast<int>(gridLabels.size());
+  const int gridStartY = contentY + 20;
+
+  for (int i = 0; i < numItems; i++) {
+    const int col = i % cols;
+    const int row = i / cols;
+    const int cellX = contentX + col * cellW;
+    const int cellY = gridStartY + row * cellH;
+    const int cellCenterX = cellX + cellW / 2;
+    const bool sel = (i == selectorIndex);
+
+    // Selection: fill icon background
+    if (sel) {
+      renderer.fillRect(cellCenterX - 28, cellY + 2, 56, 48);
+    }
+
+    // Draw icon based on type
+    switch (gridIcons[i]) {
+      case ICON_DOCUMENT:
+        drawMacDocumentIcon(cellCenterX, cellY + 24, sel);
+        break;
+      case ICON_SETTINGS:
+        drawMacSettingsIcon(cellCenterX, cellY + 24, sel);
+        break;
+      default:
+        drawMacFolderIcon(cellCenterX, cellY + 24, sel);
+        break;
+    }
+
+    // Label
+    const std::string truncLabel = renderer.truncatedText(UI_10_FONT_ID, gridLabels[i].c_str(), cellW - 10);
+    const int labelW = renderer.getTextWidth(UI_10_FONT_ID, truncLabel.c_str());
+    const int labelX = cellCenterX - labelW / 2;
+    const int labelY = cellY + 56;
+
+    if (sel) {
+      renderer.fillRect(labelX - 4, labelY - 2, labelW + 8, 20);
+      renderer.drawText(UI_10_FONT_ID, labelX, labelY, truncLabel.c_str(), false);
+    } else {
+      renderer.drawText(UI_10_FONT_ID, labelX, labelY, truncLabel.c_str(), true);
+    }
+  }
+
+  // ==================== BUTTON HINTS ====================
+  const auto btnLabels = mappedInput.mapLabels("", tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+  GUI.drawButtonHints(renderer, btnLabels.btn1, btnLabels.btn2, btnLabels.btn3, btnLabels.btn4);
 
   renderer.displayBuffer();
 
   if (!firstRenderDone) {
     firstRenderDone = true;
     requestUpdate();
-  } else if (!recentsLoaded && !recentsLoading) {
-    recentsLoading = true;
-    loadRecentCovers(metrics.homeCoverHeight);
   }
 }

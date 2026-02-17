@@ -33,6 +33,9 @@ class HomeActivity final : public Activity {
   void freeCoverBuffer();     // Free the stored cover buffer
   void loadRecentBooks(int maxBooks);
   void loadRecentCovers(int coverHeight);
+  void drawMacFolderIcon(int cx, int cy, bool selected) const;
+  void drawMacDocumentIcon(int cx, int cy, bool selected) const;
+  void drawMacSettingsIcon(int cx, int cy, bool selected) const;
 
  public:
   explicit HomeActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
