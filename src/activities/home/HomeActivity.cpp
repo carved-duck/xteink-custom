@@ -121,6 +121,11 @@ void HomeActivity::onEnter() {
   // Load most recent book for "Currently Reading" icon
   loadRecentBooks(1);
 
+  // Generate cover thumbnails for home screen grid
+  if (!recentBooks.empty()) {
+    loadRecentCovers(44);
+  }
+
   // Trigger first update
   requestUpdate();
 }
@@ -251,24 +256,66 @@ void HomeActivity::drawMacDocumentIcon(int cx, int cy, bool selected) const {
 
 void HomeActivity::drawMacSettingsIcon(int cx, int cy, bool selected) const {
   const bool inv = selected;
+  const int x = cx - 18;
+  const int w = 36;
 
-  // Gear: central body + 4 teeth at cardinal directions
-  renderer.fillRect(cx - 10, cy - 10, 20, 20, !inv);
-  renderer.fillRect(cx - 4, cy - 16, 8, 7, !inv);
-  renderer.fillRect(cx - 4, cy + 9, 8, 7, !inv);
-  renderer.fillRect(cx - 16, cy - 4, 7, 8, !inv);
-  renderer.fillRect(cx + 9, cy - 4, 7, 8, !inv);
+  // Three horizontal slider lines with knobs at different positions
+  // Slider 1 (top) - knob left
+  renderer.fillRect(x, cy - 12, w, 1, !inv);
+  renderer.fillRect(x + 6, cy - 15, 6, 7, !inv);
+  renderer.fillRect(x + 7, cy - 14, 4, 5, inv);
 
-  // Connected interiors
-  renderer.fillRect(cx - 9, cy - 9, 18, 18, inv);
-  renderer.fillRect(cx - 3, cy - 15, 6, 7, inv);
-  renderer.fillRect(cx - 3, cy + 8, 6, 7, inv);
-  renderer.fillRect(cx - 15, cy - 3, 7, 6, inv);
-  renderer.fillRect(cx + 8, cy - 3, 7, 6, inv);
+  // Slider 2 (middle) - knob right
+  renderer.fillRect(x, cy - 1, w, 1, !inv);
+  renderer.fillRect(x + 22, cy - 4, 6, 7, !inv);
+  renderer.fillRect(x + 23, cy - 3, 4, 5, inv);
 
-  // Center hole
-  renderer.fillRect(cx - 3, cy - 3, 6, 6, !inv);
-  renderer.fillRect(cx - 2, cy - 2, 4, 4, inv);
+  // Slider 3 (bottom) - knob center
+  renderer.fillRect(x, cy + 10, w, 1, !inv);
+  renderer.fillRect(x + 14, cy + 7, 6, 7, !inv);
+  renderer.fillRect(x + 15, cy + 8, 4, 5, inv);
+}
+
+void HomeActivity::drawMacTransferIcon(int cx, int cy, bool selected) const {
+  const bool inv = selected;
+  const int leftX = cx - 12;
+  constexpr int halfH = 12;
+  constexpr int maxW = 28;
+
+  // Right-pointing dart / paper airplane shape
+  for (int dy = -halfH; dy <= halfH; dy++) {
+    int w = maxW * (halfH - (dy < 0 ? -dy : dy)) / halfH;
+    if (w > 0) {
+      renderer.fillRect(leftX, cy + dy, w, 1, !inv);
+    }
+  }
+
+  // Interior
+  for (int dy = -(halfH - 1); dy <= (halfH - 1); dy++) {
+    int w = (maxW - 2) * (halfH - 1 - (dy < 0 ? -dy : dy)) / (halfH - 1);
+    if (w > 0) {
+      renderer.fillRect(leftX + 1, cy + dy, w, 1, inv);
+    }
+  }
+
+  // Fold line through center
+  renderer.fillRect(leftX, cy, maxW, 1, !inv);
+}
+
+void HomeActivity::drawMacHardDriveIcon(int cx, int cy, bool selected) const {
+  const bool inv = selected;
+  const int x = cx - 22;
+  const int y = cy - 12;
+
+  // Hard drive body
+  renderer.fillRect(x, y, 44, 24, !inv);
+  renderer.fillRect(x + 1, y + 1, 42, 22, inv);
+
+  // Divider line near bottom
+  renderer.fillRect(x + 1, y + 17, 42, 1, !inv);
+
+  // LED indicator dot
+  renderer.fillRect(x + 34, y + 19, 4, 3, !inv);
 }
 
 void HomeActivity::render(Activity::RenderLock&&) {
@@ -279,7 +326,7 @@ void HomeActivity::render(Activity::RenderLock&&) {
 
   // ==================== MENU BAR ====================
   constexpr int menuBarH = 26;
-  renderer.drawLine(0, menuBarH - 1, W - 1, menuBarH - 1);
+  renderer.drawLine(0, menuBarH, W - 1, menuBarH);
   renderer.drawText(UI_10_FONT_ID, 12, 6, "File", true);
   renderer.drawText(UI_10_FONT_ID, 58, 6, "Edit", true);
   renderer.drawText(UI_10_FONT_ID, 104, 6, "View", true);
@@ -289,16 +336,16 @@ void HomeActivity::render(Activity::RenderLock&&) {
   const uint16_t battPct = battery.readPercentage();
   char battText[8];
   snprintf(battText, sizeof(battText), "%d%%", battPct);
-  int battTextW = renderer.getTextWidth(SMALL_FONT_ID, battText);
+  int battTextW = renderer.getTextWidth(UI_10_FONT_ID, battText);
   const int biX = W - battTextW - 34;
-  const int biY = 8;
+  const int biY = 12;
   renderer.drawRect(biX, biY, 18, 10);
   renderer.fillRect(biX + 18, biY + 3, 2, 4);
   int fillW = (14 * static_cast<int>(battPct)) / 100;
   if (fillW > 0) {
     renderer.fillRect(biX + 2, biY + 2, fillW, 6);
   }
-  renderer.drawText(SMALL_FONT_ID, W - battTextW - 10, 9, battText, true);
+  renderer.drawText(UI_10_FONT_ID, W - battTextW - 10, 6, battText, true);
 
   // ==================== FINDER WINDOW ====================
   constexpr int winX = 14, winY = 38;
@@ -314,14 +361,14 @@ void HomeActivity::render(Activity::RenderLock&&) {
   renderer.fillRect(winX + winW, winY + 3, 2, winH - 1);
 
   // ---- Title bar ----
-  constexpr int tbH = 22;
+  constexpr int tbH = 24;
   const int tbY = winY + 2;
   const int tbInnerX1 = winX + 2;
   const int tbInnerX2 = winX + winW - 3;
 
   // Title bar horizontal stripes
   for (int y = tbY + 2; y < tbY + tbH - 1; y += 2) {
-    renderer.drawLine(tbInnerX1 + 18, y, tbInnerX2 - 18, y);
+    renderer.drawLine(tbInnerX1 + 20, y, tbInnerX2 - 18, y);
   }
 
   // Close box
@@ -337,7 +384,7 @@ void HomeActivity::render(Activity::RenderLock&&) {
 
   // ---- Info bar ----
   const int infoY = tbY + tbH;
-  constexpr int infoH = 22;
+  constexpr int infoH = 24;
   renderer.drawLine(winX + 2, infoY, tbInnerX2, infoY);
 
   const int itemCount = getMenuItemCount();
@@ -354,21 +401,24 @@ void HomeActivity::render(Activity::RenderLock&&) {
 
   // Build items list matching loop() order: recent books first, then menu items
   constexpr int ICON_FOLDER = 0;
-  constexpr int ICON_DOCUMENT = 1;
-  constexpr int ICON_SETTINGS = 2;
+  constexpr int ICON_COVER = 1;
+  constexpr int ICON_HARDDRIVE = 2;
+  constexpr int ICON_SETTINGS = 3;
+  constexpr int ICON_TRANSFER = 4;
+  constexpr int coverThumbH = 44;
 
   std::vector<std::string> gridLabels;
   std::vector<int> gridIcons;
 
-  // Recent books (document icons)
+  // Recent books (cover or document fallback)
   for (const auto& book : recentBooks) {
     gridLabels.push_back(book.title.empty() ? "Currently Reading" : book.title);
-    gridIcons.push_back(ICON_DOCUMENT);
+    gridIcons.push_back(ICON_COVER);
   }
 
   // Static menu items
   gridLabels.push_back(tr(STR_BROWSE_FILES));
-  gridIcons.push_back(ICON_FOLDER);
+  gridIcons.push_back(ICON_HARDDRIVE);
   gridLabels.push_back(tr(STR_MENU_RECENT_BOOKS));
   gridIcons.push_back(ICON_FOLDER);
   if (hasOpdsUrl) {
@@ -376,7 +426,7 @@ void HomeActivity::render(Activity::RenderLock&&) {
     gridIcons.push_back(ICON_FOLDER);
   }
   gridLabels.push_back(tr(STR_FILE_TRANSFER));
-  gridIcons.push_back(ICON_FOLDER);
+  gridIcons.push_back(ICON_TRANSFER);
   gridLabels.push_back(tr(STR_SETTINGS_TITLE));
   gridIcons.push_back(ICON_SETTINGS);
 
@@ -394,22 +444,53 @@ void HomeActivity::render(Activity::RenderLock&&) {
     const int cellCenterX = cellX + cellW / 2;
     const bool sel = (i == selectorIndex);
 
-    // Selection: fill icon background
-    if (sel) {
-      renderer.fillRect(cellCenterX - 28, cellY + 2, 56, 48);
-    }
-
     // Draw icon based on type
-    switch (gridIcons[i]) {
-      case ICON_DOCUMENT:
+    if (gridIcons[i] == ICON_COVER && i < static_cast<int>(recentBooks.size()) &&
+        !recentBooks[i].coverBmpPath.empty()) {
+      // Try to draw book cover thumbnail
+      std::string coverPath = UITheme::getCoverThumbPath(recentBooks[i].coverBmpPath, coverThumbH);
+      FsFile coverFile;
+      bool coverDrawn = false;
+      if (Storage.openFileForRead("HOME", coverPath, coverFile)) {
+        Bitmap coverBmp(coverFile);
+        if (coverBmp.parseHeaders() == BmpReaderError::Ok) {
+          int bw = coverBmp.getWidth();
+          int bh = coverBmp.getHeight();
+          int bx = cellCenterX - bw / 2;
+          int by = cellY + 2 + (48 - bh) / 2;
+          if (sel) {
+            renderer.drawRect(bx - 3, by - 3, bw + 6, bh + 6);
+            renderer.drawRect(bx - 2, by - 2, bw + 4, bh + 4);
+          }
+          renderer.drawBitmap(coverBmp, bx, by, bw, bh, 0, 0);
+          coverDrawn = true;
+        }
+      }
+      if (!coverDrawn) {
+        if (sel) {
+          renderer.fillRect(cellCenterX - 28, cellY + 2, 56, 48);
+        }
         drawMacDocumentIcon(cellCenterX, cellY + 24, sel);
-        break;
-      case ICON_SETTINGS:
-        drawMacSettingsIcon(cellCenterX, cellY + 24, sel);
-        break;
-      default:
-        drawMacFolderIcon(cellCenterX, cellY + 24, sel);
-        break;
+      }
+    } else {
+      // Standard icon with selection highlight
+      if (sel) {
+        renderer.fillRect(cellCenterX - 28, cellY + 2, 56, 48);
+      }
+      switch (gridIcons[i]) {
+        case ICON_HARDDRIVE:
+          drawMacHardDriveIcon(cellCenterX, cellY + 24, sel);
+          break;
+        case ICON_SETTINGS:
+          drawMacSettingsIcon(cellCenterX, cellY + 24, sel);
+          break;
+        case ICON_TRANSFER:
+          drawMacTransferIcon(cellCenterX, cellY + 24, sel);
+          break;
+        default:
+          drawMacFolderIcon(cellCenterX, cellY + 24, sel);
+          break;
+      }
     }
 
     // Label
@@ -419,7 +500,7 @@ void HomeActivity::render(Activity::RenderLock&&) {
     const int labelY = cellY + 56;
 
     if (sel) {
-      renderer.fillRect(labelX - 4, labelY - 2, labelW + 8, 20);
+      renderer.fillRect(labelX - 4, labelY - 3, labelW + 8, 28);
       renderer.drawText(UI_10_FONT_ID, labelX, labelY, truncLabel.c_str(), false);
     } else {
       renderer.drawText(UI_10_FONT_ID, labelX, labelY, truncLabel.c_str(), true);

@@ -36,6 +36,8 @@ class HomeActivity final : public Activity {
   void drawMacFolderIcon(int cx, int cy, bool selected) const;
   void drawMacDocumentIcon(int cx, int cy, bool selected) const;
   void drawMacSettingsIcon(int cx, int cy, bool selected) const;
+  void drawMacTransferIcon(int cx, int cy, bool selected) const;
+  void drawMacHardDriveIcon(int cx, int cy, bool selected) const;
 
  public:
   explicit HomeActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
