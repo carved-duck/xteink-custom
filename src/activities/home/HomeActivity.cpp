@@ -126,6 +126,10 @@ void HomeActivity::onEnter() {
     loadRecentCovers(44);
   }
 
+  // Cache SD card storage info (freeClusterCount is slow — only call once)
+  cachedTotalBytes = Storage.cardSizeBytes();
+  cachedFreeBytes = Storage.freeSpaceBytes();
+
   // Load reading progress for the current book
   bookProgressPercent = -1;
   if (!recentBooks.empty() && StringUtils::checkFileExtension(recentBooks[0].path, ".epub")) {
@@ -421,9 +425,7 @@ void HomeActivity::render(Activity::RenderLock&&) {
 
   // Storage: three-column layout like classic Mac Finder
   // "X items" (left)    "X.X GB in disk" (center)    "XX.X GB available" (right)
-  uint64_t totalBytes = Storage.cardSizeBytes();
-  uint64_t freeBytes = Storage.freeSpaceBytes();
-  uint64_t usedBytes = totalBytes - freeBytes;
+  uint64_t usedBytes = cachedTotalBytes - cachedFreeBytes;
 
   char usedText[32];
   snprintf(usedText, sizeof(usedText), "%.1f GB in disk",
@@ -434,7 +436,7 @@ void HomeActivity::render(Activity::RenderLock&&) {
 
   char freeText[32];
   snprintf(freeText, sizeof(freeText), "%.1f GB available",
-           static_cast<double>(freeBytes) / (1024.0 * 1024.0 * 1024.0));
+           static_cast<double>(cachedFreeBytes) / (1024.0 * 1024.0 * 1024.0));
   int freeTextW = renderer.getTextWidth(SMALL_FONT_ID, freeText);
   renderer.drawText(SMALL_FONT_ID, tbInnerX2 - freeTextW - 8, infoY + 5, freeText);
 

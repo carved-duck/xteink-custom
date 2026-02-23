@@ -20,6 +20,8 @@ class HomeActivity final : public Activity {
   bool coverBufferStored = false;  // Track if cover buffer is stored
   uint8_t* coverBuffer = nullptr;  // HomeActivity's own buffer for cover image
   int bookProgressPercent = -1;    // Current book reading progress (-1 = no book open)
+  uint64_t cachedTotalBytes = 0;   // SD card total size (cached on enter)
+  uint64_t cachedFreeBytes = 0;    // SD card free space (cached on enter)
   std::vector<RecentBook> recentBooks;
   const std::function<void(const std::string& path)> onSelectBook;
   const std::function<void()> onMyLibraryOpen;
