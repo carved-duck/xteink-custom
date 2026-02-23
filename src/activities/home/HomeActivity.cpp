@@ -126,6 +126,30 @@ void HomeActivity::onEnter() {
     loadRecentCovers(44);
   }
 
+  // Load reading progress for the current book
+  bookProgressPercent = -1;
+  if (!recentBooks.empty() && StringUtils::checkFileExtension(recentBooks[0].path, ".epub")) {
+    Epub epub(recentBooks[0].path, "/.crosspoint");
+    if (epub.load(false, true)) {
+      FsFile f;
+      if (Storage.openFileForRead("HOME", epub.getCachePath() + "/progress.bin", f)) {
+        uint8_t data[6];
+        int dataSize = f.read(data, 6);
+        f.close();
+        if (dataSize >= 4) {
+          uint16_t spineIdx = data[0] + (data[1] << 8);
+          uint16_t page = data[2] + (data[3] << 8);
+          uint16_t pageCount = (dataSize == 6) ? data[4] + (data[5] << 8) : 0;
+          float spineProgress = (pageCount > 0) ? static_cast<float>(page) / pageCount : 0.0f;
+          float progress = epub.calculateProgress(spineIdx, spineProgress);
+          bookProgressPercent = static_cast<int>(progress * 100.0f + 0.5f);
+          if (bookProgressPercent > 100) bookProgressPercent = 100;
+          if (bookProgressPercent < 0) bookProgressPercent = 0;
+        }
+      }
+    }
+  }
+
   // Trigger first update
   requestUpdate();
 }
@@ -327,10 +351,13 @@ void HomeActivity::render(Activity::RenderLock&&) {
   // ==================== MENU BAR ====================
   constexpr int menuBarH = 26;
   renderer.drawLine(0, menuBarH, W - 1, menuBarH);
-  renderer.drawText(UI_10_FONT_ID, 12, 6, "File", true);
-  renderer.drawText(UI_10_FONT_ID, 58, 6, "Edit", true);
-  renderer.drawText(UI_10_FONT_ID, 104, 6, "View", true);
-  renderer.drawText(UI_10_FONT_ID, 156, 6, "Special", true);
+
+  // Reading progress on the left
+  if (bookProgressPercent >= 0) {
+    char progressText[24];
+    snprintf(progressText, sizeof(progressText), "Reading: %d%%", bookProgressPercent);
+    renderer.drawText(UI_10_FONT_ID, 12, 6, progressText, true);
+  }
 
   // Battery in menu bar (right side)
   const uint16_t battPct = battery.readPercentage();
@@ -391,6 +418,25 @@ void HomeActivity::render(Activity::RenderLock&&) {
   char infoText[64];
   snprintf(infoText, sizeof(infoText), "%d items", itemCount);
   renderer.drawText(SMALL_FONT_ID, winX + 12, infoY + 5, infoText);
+
+  // Storage: three-column layout like classic Mac Finder
+  // "X items" (left)    "X.X GB in disk" (center)    "XX.X GB available" (right)
+  uint64_t totalBytes = Storage.cardSizeBytes();
+  uint64_t freeBytes = Storage.freeSpaceBytes();
+  uint64_t usedBytes = totalBytes - freeBytes;
+
+  char usedText[32];
+  snprintf(usedText, sizeof(usedText), "%.1f GB in disk",
+           static_cast<double>(usedBytes) / (1024.0 * 1024.0 * 1024.0));
+  int usedTextW = renderer.getTextWidth(SMALL_FONT_ID, usedText);
+  int infoBarCenter = winX + winW / 2;
+  renderer.drawText(SMALL_FONT_ID, infoBarCenter - usedTextW / 2, infoY + 5, usedText);
+
+  char freeText[32];
+  snprintf(freeText, sizeof(freeText), "%.1f GB available",
+           static_cast<double>(freeBytes) / (1024.0 * 1024.0 * 1024.0));
+  int freeTextW = renderer.getTextWidth(SMALL_FONT_ID, freeText);
+  renderer.drawText(SMALL_FONT_ID, tbInnerX2 - freeTextW - 8, infoY + 5, freeText);
 
   renderer.drawLine(winX + 2, infoY + infoH, tbInnerX2, infoY + infoH);
 

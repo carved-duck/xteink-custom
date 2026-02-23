@@ -19,6 +19,7 @@ class HomeActivity final : public Activity {
   bool coverRendered = false;      // Track if cover has been rendered once
   bool coverBufferStored = false;  // Track if cover buffer is stored
   uint8_t* coverBuffer = nullptr;  // HomeActivity's own buffer for cover image
+  int bookProgressPercent = -1;    // Current book reading progress (-1 = no book open)
   std::vector<RecentBook> recentBooks;
   const std::function<void(const std::string& path)> onSelectBook;
   const std::function<void()> onMyLibraryOpen;
