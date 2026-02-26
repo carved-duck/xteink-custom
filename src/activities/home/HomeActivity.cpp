@@ -555,10 +555,6 @@ void HomeActivity::render(Activity::RenderLock&&) {
     }
   }
 
-  // ==================== BUTTON HINTS ====================
-  const auto btnLabels = mappedInput.mapLabels("", tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
-  GUI.drawButtonHints(renderer, btnLabels.btn1, btnLabels.btn2, btnLabels.btn3, btnLabels.btn4);
-
   renderer.displayBuffer();
 
   if (!firstRenderDone) {
