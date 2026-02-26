@@ -2,6 +2,7 @@
 
 #include <Logging.h>
 #include <WiFi.h>
+#include <driver/gpio.h>
 #include <esp_sleep.h>
 
 #include <cassert>
@@ -11,6 +12,9 @@
 HalPowerManager powerManager;  // Singleton instance
 
 void HalPowerManager::begin() {
+  // Release GPIO hold from deep sleep so pinMode takes effect
+  gpio_hold_dis(static_cast<gpio_num_t>(BAT_GPIO0));
+
   pinMode(BAT_GPIO0, INPUT);
   normalFreq = getCpuFrequencyMhz();
   modeMutex = xSemaphoreCreateMutex();
@@ -58,6 +62,20 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
     delay(50);
     gpio.update();
   }
+
+  // Pull down the floating ADC button pins to prevent EMI from coupling
+  // into the adjacent power button GPIO and causing spurious wake-ups
+  pinMode(InputManager::BUTTON_ADC_PIN_1, INPUT_PULLDOWN);
+  pinMode(InputManager::BUTTON_ADC_PIN_2, INPUT_PULLDOWN);
+  pinMode(BAT_GPIO0, INPUT_PULLDOWN);
+
+  // Hold all GPIO states through deep sleep so pins don't drift
+  gpio_hold_en(static_cast<gpio_num_t>(InputManager::BUTTON_ADC_PIN_1));
+  gpio_hold_en(static_cast<gpio_num_t>(InputManager::BUTTON_ADC_PIN_2));
+  gpio_hold_en(static_cast<gpio_num_t>(BAT_GPIO0));
+  gpio_hold_en(static_cast<gpio_num_t>(InputManager::POWER_BUTTON_PIN));
+  gpio_deep_sleep_hold_en();
+
   // Arm the wakeup trigger *after* the button is released
   esp_deep_sleep_enable_gpio_wakeup(1ULL << InputManager::POWER_BUTTON_PIN, ESP_GPIO_WAKEUP_GPIO_LOW);
   // Enter Deep Sleep
