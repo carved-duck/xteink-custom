@@ -149,6 +149,14 @@ void enterNewActivity(Activity* activity) {
 // Verify power button press duration on wake-up from deep sleep
 // Pre-condition: isWakeupByPowerButton() == true
 void verifyPowerButtonDuration() {
+  // Raw GPIO check: if the power button is not physically pressed right now,
+  // this was a spurious wake (e.g. EMI noise from MagSafe mount). Go back to sleep.
+  // By the time the CPU boots (~100-200ms), any EMI spike is long gone,
+  // but a real human press is still being held.
+  if (digitalRead(InputManager::POWER_BUTTON_PIN) == HIGH) {
+    powerManager.startDeepSleep(gpio);
+  }
+
   if (SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP) {
     // Fast path for short press
     // Needed because inputManager.isPressed() may take up to ~500ms to return the correct state
