@@ -1,5 +1,6 @@
 #include "SleepActivity.h"
 
+#include <algorithm>
 #include <Epub.h>
 #include <GfxRenderer.h>
 #include <HalStorage.h>
@@ -65,18 +66,40 @@ void SleepActivity::renderCustomSleepScreen() const {
     }
     const auto numFiles = files.size();
     if (numFiles > 0) {
-      // Generate a random number between 1 and numFiles
-      auto randomFileIndex = random(numFiles);
-      // If we picked the same image as last time, reroll
-      while (numFiles > 1 && randomFileIndex == APP_STATE.lastSleepImage) {
-        randomFileIndex = random(numFiles);
+      // Shuffle bag: cycle through all images before repeating
+      bool needsShuffle =
+          APP_STATE.sleepShuffleOrder.size() != numFiles ||
+          APP_STATE.sleepShufflePosition >= numFiles;
+
+      if (needsShuffle) {
+        // Build a new shuffled order (Fisher-Yates)
+        APP_STATE.sleepShuffleOrder.resize(numFiles);
+        for (size_t i = 0; i < numFiles; i++) {
+          APP_STATE.sleepShuffleOrder[i] = i;
+        }
+        for (size_t i = numFiles - 1; i > 0; i--) {
+          const size_t j = random(i + 1);
+          std::swap(APP_STATE.sleepShuffleOrder[i], APP_STATE.sleepShuffleOrder[j]);
+        }
+        // Avoid showing the same image that ended the previous cycle
+        if (numFiles > 1 && APP_STATE.sleepShuffleOrder[0] == APP_STATE.lastSleepImage) {
+          const size_t swapWith = 1 + random(numFiles - 1);
+          std::swap(APP_STATE.sleepShuffleOrder[0], APP_STATE.sleepShuffleOrder[swapWith]);
+        }
+        APP_STATE.sleepShufflePosition = 0;
       }
-      APP_STATE.lastSleepImage = randomFileIndex;
+
+      const auto fileIndex = APP_STATE.sleepShuffleOrder[APP_STATE.sleepShufflePosition];
+      APP_STATE.sleepShufflePosition++;
+      APP_STATE.lastSleepImage = fileIndex;
       APP_STATE.saveToFile();
-      const auto filename = "/sleep/" + files[randomFileIndex];
+
+      const auto filename = "/sleep/" + files[fileIndex];
       FsFile file;
       if (Storage.openFileForRead("SLP", filename, file)) {
-        LOG_DBG("SLP", "Randomly loading: /sleep/%s", files[randomFileIndex].c_str());
+        LOG_DBG("SLP", "Shuffle loading (%u/%u): /sleep/%s",
+                APP_STATE.sleepShufflePosition, (uint8_t)numFiles,
+                files[fileIndex].c_str());
         delay(100);
         Bitmap bitmap(file, true);
         if (bitmap.parseHeaders() == BmpReaderError::Ok) {

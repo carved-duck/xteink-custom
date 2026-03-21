@@ -5,7 +5,7 @@
 #include <Serialization.h>
 
 namespace {
-constexpr uint8_t STATE_FILE_VERSION = 4;
+constexpr uint8_t STATE_FILE_VERSION = 5;
 constexpr char STATE_FILE[] = "/.crosspoint/state.bin";
 }  // namespace
 
@@ -22,6 +22,12 @@ bool CrossPointState::saveToFile() const {
   serialization::writePod(outputFile, lastSleepImage);
   serialization::writePod(outputFile, readerActivityLoadCount);
   serialization::writePod(outputFile, lastSleepFromReader);
+  const uint8_t shuffleSize = sleepShuffleOrder.size();
+  serialization::writePod(outputFile, shuffleSize);
+  for (uint8_t i = 0; i < shuffleSize; i++) {
+    serialization::writePod(outputFile, sleepShuffleOrder[i]);
+  }
+  serialization::writePod(outputFile, sleepShufflePosition);
   outputFile.close();
   return true;
 }
@@ -55,6 +61,19 @@ bool CrossPointState::loadFromFile() {
     serialization::readPod(inputFile, lastSleepFromReader);
   } else {
     lastSleepFromReader = false;
+  }
+
+  if (version >= 5) {
+    uint8_t shuffleSize;
+    serialization::readPod(inputFile, shuffleSize);
+    sleepShuffleOrder.resize(shuffleSize);
+    for (uint8_t i = 0; i < shuffleSize; i++) {
+      serialization::readPod(inputFile, sleepShuffleOrder[i]);
+    }
+    serialization::readPod(inputFile, sleepShufflePosition);
+  } else {
+    sleepShuffleOrder.clear();
+    sleepShufflePosition = 0;
   }
 
   inputFile.close();

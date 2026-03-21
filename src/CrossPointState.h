@@ -1,6 +1,7 @@
 #pragma once
 #include <iosfwd>
 #include <string>
+#include <vector>
 
 class CrossPointState {
   // Static instance
@@ -11,6 +12,8 @@ class CrossPointState {
   uint8_t lastSleepImage;
   uint8_t readerActivityLoadCount = 0;
   bool lastSleepFromReader = false;
+  std::vector<uint8_t> sleepShuffleOrder;
+  uint8_t sleepShufflePosition = 0;
   ~CrossPointState() = default;
 
   // Get singleton instance
