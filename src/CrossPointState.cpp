@@ -7,6 +7,7 @@
 namespace {
 constexpr uint8_t STATE_FILE_VERSION = 5;
 constexpr char STATE_FILE[] = "/.crosspoint/state.bin";
+constexpr uint32_t MAX_PATH_LENGTH = 1024;
 }  // namespace
 
 CrossPointState CrossPointState::instance;
@@ -46,7 +47,22 @@ bool CrossPointState::loadFromFile() {
     return false;
   }
 
-  serialization::readString(inputFile, openEpubPath);
+  // Read openEpubPath with length validation to guard against corrupt state files
+  {
+    uint32_t strLen;
+    serialization::readPod(inputFile, strLen);
+    if (strLen > MAX_PATH_LENGTH) {
+      LOG_ERR("CPS", "Corrupt state file: string length %lu", (unsigned long)strLen);
+      inputFile.close();
+      Storage.remove(STATE_FILE);
+      return false;
+    }
+    openEpubPath.resize(strLen);
+    if (strLen > 0) {
+      inputFile.read(reinterpret_cast<uint8_t*>(&openEpubPath[0]), strLen);
+    }
+  }
+
   if (version >= 2) {
     serialization::readPod(inputFile, lastSleepImage);
   } else {

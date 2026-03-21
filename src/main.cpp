@@ -162,7 +162,11 @@ void verifyPowerButtonDuration() {
   // ADC is already configured by gpio.begin() → InputManager::begin().
   const int adcValue = analogRead(InputManager::BUTTON_ADC_PIN_2);
   if (adcValue > 1120) {
-    // Down button not held — go back to sleep
+    // Down button not held — wait for power button release before sleeping,
+    // otherwise GPIO 3 is still LOW and immediately triggers another wake.
+    while (digitalRead(InputManager::POWER_BUTTON_PIN) == LOW) {
+      delay(10);
+    }
     powerManager.startDeepSleep(gpio);
   }
 }
