@@ -157,16 +157,58 @@ void verifyPowerButtonDuration() {
     powerManager.startDeepSleep(gpio);
   }
 
-  // Combo check: require Down button held simultaneously with Power to boot.
-  // Raw ADC read on GPIO 2 — Down button reads ~5 mV (well below 1120 threshold).
-  // ADC is already configured by gpio.begin() → InputManager::begin().
-  const int adcValue = analogRead(InputManager::BUTTON_ADC_PIN_2);
-  if (adcValue > 1120) {
-    // Down button not held — wait for power button release before sleeping,
-    // otherwise GPIO 3 is still LOW and immediately triggers another wake.
-    while (digitalRead(InputManager::POWER_BUTTON_PIN) == LOW) {
-      delay(10);
+  if (SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP) {
+    // Short press mode: add a brief sustained-press check to filter persistent EMI,
+    // then fall through to the combo check below.
+    delay(200);
+    if (digitalRead(InputManager::POWER_BUTTON_PIN) == HIGH) {
+      powerManager.startDeepSleep(gpio);
     }
+  } else {
+    // Give the user up to 1000ms to start holding the power button, and must hold for SETTINGS.getPowerButtonDuration()
+    const auto start = millis();
+    bool abort = false;
+    // Subtract the current time, because inputManager only starts counting the HeldTime from the first update()
+    // This way, we remove the time we already took to reach here from the duration,
+    // assuming the button was held until now from millis()==0 (i.e. device start time).
+    const uint16_t calibration = start;
+    const uint16_t calibratedPressDuration =
+        (calibration < SETTINGS.getPowerButtonDuration()) ? SETTINGS.getPowerButtonDuration() - calibration : 1;
+
+    gpio.update();
+    // Needed because inputManager.isPressed() may take up to ~500ms to return the correct state
+    while (!gpio.isPressed(HalGPIO::BTN_POWER) && millis() - start < 1000) {
+      delay(10);  // only wait 10ms each iteration to not delay too much in case of short configured duration.
+      gpio.update();
+    }
+
+    t2 = millis();
+    if (gpio.isPressed(HalGPIO::BTN_POWER)) {
+      do {
+        delay(10);
+        gpio.update();
+      } while (gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getHeldTime() < calibratedPressDuration);
+      abort = gpio.getHeldTime() < calibratedPressDuration;
+    } else {
+      abort = true;
+    }
+
+    if (abort) {
+      // Button released too early. Returning to sleep.
+      // IMPORTANT: Re-arm the wakeup trigger before sleeping again
+      powerManager.startDeepSleep(gpio);
+    }
+  }
+
+  // Combo check: require Down button held simultaneously with Power to boot.
+  // This runs AFTER the duration/sustained-press check has confirmed a real human press,
+  // so the ADC voltage divider has settled and EMI can't produce a false pass.
+  // Threshold from InputManager::ADC_RANGES_2 — below this = Down button pressed.
+  constexpr int ADC_DOWN_BUTTON_THRESHOLD = 1120;
+  const int adcValue = analogRead(InputManager::BUTTON_ADC_PIN_2);
+  if (adcValue > ADC_DOWN_BUTTON_THRESHOLD) {
+    // Down button not held — startDeepSleep waits for power button release
+    // before arming the wake trigger, preventing immediate re-wake.
     powerManager.startDeepSleep(gpio);
   }
 }
